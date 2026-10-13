@@ -64,14 +64,19 @@ export function handleDialBackLease(
   const isInvoke = url.startsWith("/invoke/");
 
   const abortController = new AbortController();
-  const abort = () => abortController.abort();
+  let attach: AttachChannel | undefined;
+  // Tearing down the attach unblocks a process() that waits on attach input, so the lease is
+  // always answered and the HTTP/2 session never outlives the attempt.
+  const abort = () => {
+    abortController.abort();
+    attach?.destroy();
+  };
 
   // The lease request is empty, but must be consumed to complete the exchange.
   const leaseInput = (request as AsyncIterable<Uint8Array>)[
     Symbol.asyncIterator
   ]();
 
-  let attach: AttachChannel | undefined;
   let leaseHead: { statusCode: number; headers: ResponseHeaders } | undefined;
   const leaseChunks: Uint8Array[] = [];
 
@@ -154,6 +159,7 @@ interface AttachChannel {
   end(): Promise<void>;
   failed(): boolean;
   dispose(): void;
+  destroy(): void;
 }
 
 /** One HTTP/2 session per attach; no reuse. */
@@ -216,6 +222,10 @@ function openAttach(
         stream.close();
       }
       session.close();
+    },
+    destroy: () => {
+      stream.destroy();
+      session.destroy();
     },
   };
 }
