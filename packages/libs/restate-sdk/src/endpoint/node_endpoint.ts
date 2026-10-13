@@ -28,6 +28,11 @@ import type { DefaultServiceOptions } from "../endpoint.js";
 import { tryCreateContextualLogger } from "./handlers/utils.js";
 import type { InputReader, OutputWriter } from "./handlers/types.js";
 import type { ProtocolMode } from "./discovery.js";
+import {
+  ATTACH_TOKEN_HEADER,
+  ATTACH_URL_HEADER,
+  handleDialBackLease,
+} from "./handlers/dial_back.js";
 
 export class NodeEndpoint implements RestateEndpoint {
   private builder: EndpointBuilder = new EndpointBuilder();
@@ -176,6 +181,21 @@ function nodeHandlerImpl(
 
   return (httpRequest, httpResponse) => {
     const url = httpRequest.url!;
+
+    // A lease (experimental): the protocol runs on a connection the SDK dials back.
+    const attachUrl = httpRequest.headers[ATTACH_URL_HEADER];
+    const attachToken = httpRequest.headers[ATTACH_TOKEN_HEADER];
+    if (typeof attachUrl === "string" && typeof attachToken === "string") {
+      handleDialBackLease(
+        handler,
+        httpRequest,
+        httpResponse,
+        attachUrl,
+        attachToken
+      );
+      return;
+    }
+
     const inputReader = inputReaderAdapter(httpRequest);
     const outputWriter = outputWriterAdapter(httpResponse);
     const res = httpResponse as NodeWritableResponse;
