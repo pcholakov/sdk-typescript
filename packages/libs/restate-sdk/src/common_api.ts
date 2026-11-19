@@ -29,6 +29,7 @@ export type {
   RunAction,
   RunOptions,
   KeyValueStore,
+  EntryOptions,
   DurablePromise,
   Request,
   ScopedContext,
@@ -89,6 +90,7 @@ export type {
   ServiceOptions,
   ObjectOptions,
   WorkflowOptions,
+  StatePreload,
   RetryPolicy,
 } from "./types/rpc.js";
 export {

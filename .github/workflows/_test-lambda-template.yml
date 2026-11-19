@@ -26,7 +26,7 @@ jobs:
           --health-retries 5
 
       localstack:
-        image: localstack/localstack:latest
+        image: localstack/localstack:2026.10.4@sha256:2290500d7398e6458544fab2f49aaf170b81a1006ee69067e8e7fc59b810a824
         ports:
           - 4566:4566
         env:
@@ -35,11 +35,8 @@ jobs:
           DEBUG: 1
           LAMBDA_EXECUTOR: local
           DOCKER_HOST: unix:///var/run/docker.sock
-        options: >-
-          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+        # No custom --health-cmd: the image ships its own HEALTHCHECK, and since 2026.10.0
+        # it doesn't include curl anymore.
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock
 
@@ -49,10 +46,10 @@ jobs:
       AWS_REGION: us-east-1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: "22"
 
@@ -69,7 +66,7 @@ jobs:
           timeout 60 bash -c 'until curl -f http://localhost:4566/_localstack/health; do sleep 2; done'
           echo "LocalStack is ready!"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4.3.0
         with:
           version: 11.1.3
 

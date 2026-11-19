@@ -3,9 +3,9 @@ use restate_sdk_shared_core::tracing_pretty::{Pretty, PrettyFields};
 use restate_sdk_shared_core::{
     AwaitResponse, AwakeableHandle, CallHandle, CommandRelationship, CommandType, CoreVM, Error,
     Header, HeaderMap, IdentityVerifier, ImplicitCancellationOption, Input,
-    JournalMismatchRetryBehavior, NonDeterministicChecksOption, NonEmptyValue, OnMaxAttempts,
-    ResponseHead, RetryPolicy, RunExitResult, RunHandle, SendHandle, Target, TerminalFailure,
-    UnresolvedFuture, VMOptions, Value, CANCEL_NOTIFICATION_HANDLE, VM,
+    JournalMismatchRetryBehavior, JournalReplay, NonDeterministicChecksOption, NonEmptyValue,
+    OnMaxAttempts, ResponseHead, RetryPolicy, RunExitResult, RunHandle, SendHandle, Target,
+    TerminalFailure, UnresolvedFuture, VMOptions, Value, CANCEL_NOTIFICATION_HANDLE, VM,
 };
 use serde::{Deserialize, Serialize};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -370,6 +370,31 @@ impl From<Error> for WasmFailure {
     }
 }
 
+/// Retryable failure of a `ctx.run` attempt.
+///
+/// `code` and `metadata` are propagated to the terminal failure, in case the retry policy gives up.
+#[derive(Tsify, Serialize, Deserialize)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct WasmRetryableFailure {
+    pub code: u16,
+    pub message: String,
+    pub stacktrace: Option<String>,
+    pub metadata: Vec<WasmFailureMetadata>,
+}
+
+impl From<WasmRetryableFailure> for Error {
+    fn from(value: WasmRetryableFailure) -> Self {
+        Error::new(value.code, value.message)
+            .with_stacktrace(value.stacktrace.unwrap_or_default())
+            .with_metadata(
+                value
+                    .metadata
+                    .into_iter()
+                    .map(|metadata| (metadata.key, metadata.value)),
+            )
+    }
+}
+
 #[derive(Tsify, Serialize, Deserialize)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct WasmExponentialRetryConfig {
@@ -609,6 +634,7 @@ impl WasmVM {
         disable_payload_checks: bool,
         explicit_cancellation: bool,
         on_journal_mismatch: WasmJournalMismatchBehavior,
+        explicit_recovery: bool,
     ) -> Result<WasmVM, WasmFailure> {
         let log_dispatcher = Dispatch::new(log_subscriber(log_level, Some(logger_id)));
 
@@ -631,6 +657,12 @@ impl WasmVM {
                     },
                     awaiting_on_policy: Default::default(),
                     journal_mismatch_retry_behavior: on_journal_mismatch.into(),
+                    journal_replay: if explicit_recovery {
+                        JournalReplay::Disabled
+                    } else {
+                        JournalReplay::Enabled
+                    },
+                    signal_delivery: Default::default(),
                 },
             )
         })?;
@@ -767,10 +799,15 @@ impl WasmVM {
             .map_err(Into::into)
     }
 
-    pub fn sys_get_state(&mut self, key: String) -> Result<WasmNotificationHandle, WasmFailure> {
+    pub fn sys_get_state(
+        &mut self,
+        key: String,
+        name: Option<String>,
+    ) -> Result<WasmNotificationHandle, WasmFailure> {
         use_log_dispatcher!(self, |vm| CoreVM::sys_state_get(
             vm,
             key,
+            name,
             Default::default()
         ))
         .map(Into::into)
@@ -807,28 +844,41 @@ impl WasmVM {
         )
     }
 
-    pub fn sys_get_state_keys(&mut self) -> Result<WasmNotificationHandle, WasmFailure> {
-        use_log_dispatcher!(self, CoreVM::sys_state_get_keys)
+    pub fn sys_get_state_keys(
+        &mut self,
+        name: Option<String>,
+    ) -> Result<WasmNotificationHandle, WasmFailure> {
+        use_log_dispatcher!(self, |vm| CoreVM::sys_state_get_keys(vm, name))
             .map(Into::into)
             .map_err(Into::into)
     }
 
-    pub fn sys_set_state(&mut self, key: String, buffer: Vec<u8>) -> Result<(), WasmFailure> {
+    pub fn sys_set_state(
+        &mut self,
+        key: String,
+        buffer: Vec<u8>,
+        name: Option<String>,
+    ) -> Result<(), WasmFailure> {
         use_log_dispatcher!(self, |vm| CoreVM::sys_state_set(
             vm,
             key,
             buffer.into(),
+            name,
             Default::default()
         ))
         .map_err(Into::into)
     }
 
-    pub fn sys_clear_state(&mut self, key: String) -> Result<(), WasmFailure> {
-        use_log_dispatcher!(self, |vm| CoreVM::sys_state_clear(vm, key)).map_err(Into::into)
+    pub fn sys_clear_state(
+        &mut self,
+        key: String,
+        name: Option<String>,
+    ) -> Result<(), WasmFailure> {
+        use_log_dispatcher!(self, |vm| CoreVM::sys_state_clear(vm, key, name)).map_err(Into::into)
     }
 
-    pub fn sys_clear_all_state(&mut self) -> Result<(), WasmFailure> {
-        use_log_dispatcher!(self, CoreVM::sys_state_clear_all).map_err(Into::into)
+    pub fn sys_clear_all_state(&mut self, name: Option<String>) -> Result<(), WasmFailure> {
+        use_log_dispatcher!(self, |vm| CoreVM::sys_state_clear_all(vm, name)).map_err(Into::into)
     }
 
     pub fn sys_sleep(
@@ -1094,8 +1144,7 @@ impl WasmVM {
     pub fn propose_run_completion_failure_transient(
         &mut self,
         handle: WasmNotificationHandle,
-        error_message: String,
-        error_stacktrace: Option<String>,
+        failure: WasmRetryableFailure,
         attempt_duration: u64,
         config: Option<WasmExponentialRetryConfig>,
     ) -> Result<(), WasmFailure> {
@@ -1104,8 +1153,7 @@ impl WasmVM {
             handle.into(),
             RunExitResult::RetryableFailure {
                 attempt_duration: Duration::from_millis(attempt_duration),
-                error: Error::internal(error_message)
-                    .with_stacktrace(error_stacktrace.unwrap_or_default()),
+                error: failure.into(),
             },
             config
                 .map(|config| config.into())
@@ -1117,8 +1165,7 @@ impl WasmVM {
     pub fn propose_run_completion_failure_transient_with_delay_override(
         &mut self,
         handle: WasmNotificationHandle,
-        error_message: String,
-        error_stacktrace: Option<String>,
+        failure: WasmRetryableFailure,
         attempt_duration: u64,
         delay_override: Option<u64>,
         max_retry_attempts_override: Option<u32>,
@@ -1142,8 +1189,7 @@ impl WasmVM {
             handle.into(),
             RunExitResult::RetryableFailure {
                 attempt_duration: Duration::from_millis(attempt_duration),
-                error: Error::internal(error_message)
-                    .with_stacktrace(error_stacktrace.unwrap_or_default()),
+                error: failure.into(),
             },
             retry_policy
         ))
@@ -1153,8 +1199,7 @@ impl WasmVM {
     pub fn propose_run_completion_failure_transient_with_pause(
         &mut self,
         handle: WasmNotificationHandle,
-        error_message: String,
-        error_stacktrace: Option<String>,
+        failure: WasmRetryableFailure,
         attempt_duration: u64,
     ) -> Result<(), WasmFailure> {
         use_log_dispatcher!(self, |vm| CoreVM::propose_run_completion(
@@ -1162,9 +1207,7 @@ impl WasmVM {
             handle.into(),
             RunExitResult::RetryableFailure {
                 attempt_duration: Duration::from_millis(attempt_duration),
-                error: Error::internal(error_message)
-                    .with_stacktrace(error_stacktrace.unwrap_or_default())
-                    .with_should_pause(true),
+                error: Error::from(failure).with_should_pause(true),
             },
             RetryPolicy::Infinite
         ))

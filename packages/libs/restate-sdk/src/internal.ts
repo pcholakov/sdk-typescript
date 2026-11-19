@@ -1,7 +1,43 @@
 import { Context, InvocationId, RestatePromise } from "./context.js";
 import type { Serde } from "@restatedev/restate-sdk-core";
+import { EXPLICIT_RECOVERY } from "./endpoint/components.js";
+import type { TerminalError } from "./types/errors.js";
 
 export { isSuspendedError } from "./types/errors.js";
+
+/**
+ * Options set by {@link explicitRecovery}, to spread into the options of a service, virtual object, workflow or handler.
+ *
+ * @experimental
+ */
+export type ExplicitRecoveryOptions = Record<never, never>;
+
+/**
+ * Run the handlers with explicit recovery: a retried or resumed invocation doesn't replay the journal of its earlier attempts,
+ * but runs the handler again from the start, executing every context operation anew, e.g. reading the current state.
+ *
+ * The handler takes care of recovering from the effects of the earlier attempts, which might repeat (at least once):
+ * * Each attempt's calls and sends are new requests. To reach the invocation an earlier attempt started, give it an idempotency key that is the same on every attempt, such as one made from `ctx.request().id`.
+ * * `ctx.run` executes its action again on every attempt.
+ * * Awakeables are not supported.
+ *
+ * Spread the returned options into the service or handler options. Handler options take precedence over service options.
+ *
+ * @example
+ * ```ts
+ * const counter = restate.object({
+ *   name: "counter",
+ *   handlers: { ... },
+ *   options: { ...restate.internal.explicitRecovery() },
+ * });
+ * ```
+ *
+ * @experimental
+ */
+export function explicitRecovery(): ExplicitRecoveryOptions {
+  const options = { [EXPLICIT_RECOVERY]: true };
+  return options;
+}
 
 /**
  * Downcast the given context to {@link ContextInternal}, to access the internal APIs.
@@ -170,7 +206,66 @@ export interface ContextInternal extends Context {
     projection: (value: TValue | null) => TResult | Promise<TResult>,
     options?: GetProjectOptions<TValue, TResult>
   ): RestatePromise<TResult>;
+
+  /**
+   * Get the output of the target invocation, **without waiting** for it to complete.
+   *
+   * Unlike `ctx.invocation(invocationId).attach()`, which waits until the target invocation completes,
+   * this returns immediately with an {@link InvocationOutput}:
+   * * `{ status: "running" }`: the target invocation has not completed yet.
+   * * `{ status: "success", value }`: the target invocation completed successfully, with the given output value.
+   * * `{ status: "failure", error }`: the target invocation completed with a failure.
+   *   Note that the returned promise **does not** reject in this case.
+   *
+   * **Unknown invocations:** if the target invocation doesn't exist, or its result is no longer retained,
+   * the result is `{ status: "failure" }` with an `error` having code `404` and message `"not found"`.
+   *
+   * The result is recorded in the journal: on replay you get the same result as in the original execution,
+   * even if in the meantime the target invocation completed.
+   *
+   * @param invocationId the invocation ID of the target invocation.
+   * @param serde optional custom serializer/deserializer for the output value.
+   * @returns a {@link RestatePromise} resolved with the {@link InvocationOutput} of the target invocation.
+   *
+   * @example
+   * ```ts
+   * const ctxInternal = restate.internal.asInternal(ctx);
+   * const output = await ctxInternal.getInvocationOutput<string>(invocationId);
+   * switch (output.status) {
+   *   case "running":
+   *     ctx.console.log("Still running");
+   *     break;
+   *   case "success":
+   *     ctx.console.log("Completed with", output.value);
+   *     break;
+   *   case "failure":
+   *     ctx.console.log("Failed with", output.error.message);
+   *     break;
+   * }
+   * ```
+   *
+   * @experimental
+   */
+  getInvocationOutput<T>(
+    invocationId: InvocationId,
+    serde?: Serde<T>
+  ): RestatePromise<InvocationOutput<T>>;
 }
+
+/**
+ * Output of a target invocation, returned by {@link ContextInternal.getInvocationOutput}.
+ *
+ * Use the `status` field to tell the cases apart:
+ * * `running`: the target invocation has not completed yet.
+ * * `success`: the target invocation completed successfully, `value` contains its output.
+ * * `failure`: the target invocation completed with a failure, `error` contains the failure.
+ *
+ * @experimental
+ */
+export type InvocationOutput<T> =
+  | { status: "running" }
+  | { status: "success"; value: T }
+  | { status: "failure"; error: TerminalError };
 
 /**
  * Options for {@link ContextInternal.getProject}.

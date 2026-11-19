@@ -1,6 +1,6 @@
 {
   "name": "@restatedev/restate-sdk-opentelemetry",
-  "version": "1.17.3",
+  "version": "1.18.4",
   "description": "OpenTelemetry integration for the Restate TypeScript SDK",
   "author": "Restate Developers",
   "email": "code@restate.dev",
@@ -44,8 +44,7 @@
     "check:exports": "turbo run _check:exports --filter={.}...",
     "_check:exports": "attw --pack .",
     "check:api": "turbo run _check:api --filter={.}...",
-    "_check:api": "api-extractor run --local",
-    "prepublishOnly": "pnpm -w verify"
+    "_check:api": "api-extractor run --local"
   },
   "dependencies": {},
   "devDependencies": {

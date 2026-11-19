@@ -128,6 +128,16 @@ export type TypedState = Record<string, any>;
 export type UntypedState = { _: never };
 
 /**
+ * Options of a journal entry.
+ */
+export type EntryOptions = {
+  /**
+   * Observability name, recorded in the Restate journal.
+   */
+  name?: string;
+};
+
+/**
  * Key value store operations. Only keyed services have an attached key-value store.
  */
 export interface KeyValueStore<TState extends TypedState> {
@@ -137,6 +147,8 @@ export interface KeyValueStore<TState extends TypedState> {
    * and deserialized with `JSON.parse(value.toString()) as T`.
    *
    * @param name key of the state to retrieve
+   * @param serde serde of the state value
+   * @param options additional options, see {@link EntryOptions}
    * @returns a Promise that is resolved with the value of the state key
    *
    * @example
@@ -144,10 +156,11 @@ export interface KeyValueStore<TState extends TypedState> {
    */
   get<TValue, TKey extends keyof TState = string>(
     name: TState extends UntypedState ? string : TKey,
-    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>
+    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>,
+    options?: EntryOptions
   ): Promise<(TState extends UntypedState ? TValue : TState[TKey]) | null>;
 
-  stateKeys(): Promise<Array<string>>;
+  stateKeys(options?: EntryOptions): Promise<Array<string>>;
 
   /**
    * Set/store state in the Restate runtime.
@@ -156,6 +169,8 @@ export interface KeyValueStore<TState extends TypedState> {
    *
    * @param name key of the state to set
    * @param value value to set
+   * @param serde serde of the state value
+   * @param options additional options, see {@link EntryOptions}
    *
    * @example
    * ctx.set("STATE", "Hello");
@@ -163,27 +178,31 @@ export interface KeyValueStore<TState extends TypedState> {
   set<TValue, TKey extends keyof TState = string>(
     name: TState extends UntypedState ? string : TKey,
     value: TState extends UntypedState ? TValue : TState[TKey],
-    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>
+    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>,
+    options?: EntryOptions
   ): void;
 
   /**
    * Clear/delete state in the Restate runtime.
    * @param name key of the state to delete
+   * @param options additional options, see {@link EntryOptions}
    *
    * @example
    * ctx.clear("STATE");
    */
   clear<TKey extends keyof TState>(
-    name: TState extends UntypedState ? string : TKey
+    name: TState extends UntypedState ? string : TKey,
+    options?: EntryOptions
   ): void;
 
   /**
    * Clear/delete all the state entries in the Restate runtime.
+   * @param options additional options, see {@link EntryOptions}
    *
    * @example
    * ctx.clearAll();
    */
-  clearAll(): void;
+  clearAll(options?: EntryOptions): void;
 }
 
 export interface ContextDate {
@@ -207,6 +226,9 @@ export type RunOptions<T> = {
 
   /**
    * Max number of attempts (including the initial), before giving up.
+   *
+   * Must be an integer between 0 and 4294967295 (inclusive). Omit this option to avoid setting an attempt limit.
+   * Invalid values abort the invocation attempt before the run is journaled or its action is executed.
    *
    * When giving up, `ctx.run` will throw a `TerminalError` wrapping the original error message.
    */
@@ -391,6 +413,9 @@ export interface Context extends RestateContext {
    * - Providing retry policy options in {@link RunOptions}
    * - Throwing {@link RetryableError}, providing `retryAfter` option. This can be especially useful when interacting with HTTP requests returning the `Retry-After` header. You can combine the usage of throwing {@link RetryableError} with the `maxRetryAttempts`/`maxRetryDuration` from {@link RunOptions}.
    *
+   * When the retry policy gives up, `ctx.run` throws a `TerminalError` with the message of the last attempt.
+   * If the last attempt threw a {@link RetryableError}, its `errorCode` and `metadata` are propagated to the `TerminalError` as well.
+   *
    * @example Run some external action and persist its result
    * ```ts
    * const result = await ctx.run(someExternalAction)
@@ -430,6 +455,27 @@ export interface Context extends RestateContext {
    *   // Retry at most ten times
    *   maxRetryAttempts: 10
    * });
+   * ```
+   * @example Propagate error metadata when retries are exhausted
+   * ```ts
+   * try {
+   *   await ctx.run("payment action", async () => {
+   *     const res = await paymentProvider.charge(txId, paymentInfo);
+   *     if (!res.ok) {
+   *       // Retried using the RunOptions retry policy. If retries are exhausted,
+   *       // errorCode and metadata end up in the TerminalError thrown by ctx.run.
+   *       throw new RetryableError("Payment provider unavailable", {
+   *         errorCode: 503,
+   *         metadata: { providerStatus: res.status, requestId: res.requestId },
+   *       });
+   *     }
+   *   }, { maxRetryAttempts: 10 });
+   * } catch (e) {
+   *   if (e instanceof TerminalError) {
+   *     console.log(e.code, e.metadata);
+   *   }
+   *   throw e;
+   * }
    * ```
    *
    * @param action The function to run.
@@ -862,6 +908,8 @@ export interface ObjectSharedContext<TState extends TypedState = UntypedState>
    * and deserialized with `JSON.parse(value.toString()) as T`.
    *
    * @param name key of the state to retrieve
+   * @param serde serde of the state value
+   * @param options additional options, see {@link EntryOptions}
    * @returns a Promise that is resolved with the value of the state key
    *
    * @example
@@ -869,13 +917,14 @@ export interface ObjectSharedContext<TState extends TypedState = UntypedState>
    */
   get<TValue, TKey extends keyof TState = string>(
     name: TState extends UntypedState ? string : TKey,
-    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>
+    serde?: Serde<TState extends UntypedState ? TValue : TState[TKey]>,
+    options?: EntryOptions
   ): Promise<(TState extends UntypedState ? TValue : TState[TKey]) | null>;
 
   /**
    * Retrieve all the state keys for this object.
    */
-  stateKeys(): Promise<Array<string>>;
+  stateKeys(options?: EntryOptions): Promise<Array<string>>;
 }
 
 export interface Rand {

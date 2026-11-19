@@ -394,11 +394,12 @@ export class WasmVM {
      * @param {boolean} disable_payload_checks
      * @param {boolean} explicit_cancellation
      * @param {WasmJournalMismatchBehavior} on_journal_mismatch
+     * @param {boolean} explicit_recovery
      */
-    constructor(headers, log_level, logger_id, disable_payload_checks, explicit_cancellation, on_journal_mismatch) {
+    constructor(headers, log_level, logger_id, disable_payload_checks, explicit_cancellation, on_journal_mismatch, explicit_recovery) {
         const ptr0 = passArrayJsValueToWasm0(headers, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_new(ptr0, len0, log_level, logger_id, disable_payload_checks, explicit_cancellation, on_journal_mismatch);
+        const ret = wasm.wasmvm_new(ptr0, len0, log_level, logger_id, disable_payload_checks, explicit_cancellation, on_journal_mismatch, explicit_recovery);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -480,52 +481,37 @@ export class WasmVM {
     }
     /**
      * @param {number} handle
-     * @param {string} error_message
-     * @param {string | null | undefined} error_stacktrace
+     * @param {WasmRetryableFailure} failure
      * @param {bigint} attempt_duration
      * @param {WasmExponentialRetryConfig | null} [config]
      */
-    propose_run_completion_failure_transient(handle, error_message, error_stacktrace, attempt_duration, config) {
-        const ptr0 = passStringToWasm0(error_message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(error_stacktrace) ? 0 : passStringToWasm0(error_stacktrace, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_propose_run_completion_failure_transient(this.__wbg_ptr, handle, ptr0, len0, ptr1, len1, attempt_duration, isLikeNone(config) ? 0 : addToExternrefTable0(config));
+    propose_run_completion_failure_transient(handle, failure, attempt_duration, config) {
+        const ret = wasm.wasmvm_propose_run_completion_failure_transient(this.__wbg_ptr, handle, failure, attempt_duration, isLikeNone(config) ? 0 : addToExternrefTable0(config));
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
     /**
      * @param {number} handle
-     * @param {string} error_message
-     * @param {string | null | undefined} error_stacktrace
+     * @param {WasmRetryableFailure} failure
      * @param {bigint} attempt_duration
      * @param {bigint | null} [delay_override]
      * @param {number | null} [max_retry_attempts_override]
      * @param {bigint | null} [max_retry_duration_override]
      */
-    propose_run_completion_failure_transient_with_delay_override(handle, error_message, error_stacktrace, attempt_duration, delay_override, max_retry_attempts_override, max_retry_duration_override) {
-        const ptr0 = passStringToWasm0(error_message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(error_stacktrace) ? 0 : passStringToWasm0(error_stacktrace, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_propose_run_completion_failure_transient_with_delay_override(this.__wbg_ptr, handle, ptr0, len0, ptr1, len1, attempt_duration, !isLikeNone(delay_override), isLikeNone(delay_override) ? BigInt(0) : delay_override, isLikeNone(max_retry_attempts_override) ? Number.MAX_SAFE_INTEGER : (max_retry_attempts_override) >>> 0, !isLikeNone(max_retry_duration_override), isLikeNone(max_retry_duration_override) ? BigInt(0) : max_retry_duration_override);
+    propose_run_completion_failure_transient_with_delay_override(handle, failure, attempt_duration, delay_override, max_retry_attempts_override, max_retry_duration_override) {
+        const ret = wasm.wasmvm_propose_run_completion_failure_transient_with_delay_override(this.__wbg_ptr, handle, failure, attempt_duration, !isLikeNone(delay_override), isLikeNone(delay_override) ? BigInt(0) : delay_override, isLikeNone(max_retry_attempts_override) ? Number.MAX_SAFE_INTEGER : (max_retry_attempts_override) >>> 0, !isLikeNone(max_retry_duration_override), isLikeNone(max_retry_duration_override) ? BigInt(0) : max_retry_duration_override);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
     /**
      * @param {number} handle
-     * @param {string} error_message
-     * @param {string | null | undefined} error_stacktrace
+     * @param {WasmRetryableFailure} failure
      * @param {bigint} attempt_duration
      */
-    propose_run_completion_failure_transient_with_pause(handle, error_message, error_stacktrace, attempt_duration) {
-        const ptr0 = passStringToWasm0(error_message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = isLikeNone(error_stacktrace) ? 0 : passStringToWasm0(error_stacktrace, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_propose_run_completion_failure_transient_with_pause(this.__wbg_ptr, handle, ptr0, len0, ptr1, len1, attempt_duration);
+    propose_run_completion_failure_transient_with_pause(handle, failure, attempt_duration) {
+        const ret = wasm.wasmvm_propose_run_completion_failure_transient_with_pause(this.__wbg_ptr, handle, failure, attempt_duration);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
@@ -613,19 +599,27 @@ export class WasmVM {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
-    sys_clear_all_state() {
-        const ret = wasm.wasmvm_sys_clear_all_state(this.__wbg_ptr);
+    /**
+     * @param {string | null} [name]
+     */
+    sys_clear_all_state(name) {
+        var ptr0 = isLikeNone(name) ? 0 : passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmvm_sys_clear_all_state(this.__wbg_ptr, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
     /**
      * @param {string} key
+     * @param {string | null} [name]
      */
-    sys_clear_state(key) {
+    sys_clear_state(key, name) {
         const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_sys_clear_state(this.__wbg_ptr, ptr0, len0);
+        var ptr1 = isLikeNone(name) ? 0 : passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmvm_sys_clear_state(this.__wbg_ptr, ptr0, len0, ptr1, len1);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
@@ -752,22 +746,28 @@ export class WasmVM {
     }
     /**
      * @param {string} key
+     * @param {string | null} [name]
      * @returns {number}
      */
-    sys_get_state(key) {
+    sys_get_state(key, name) {
         const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_sys_get_state(this.__wbg_ptr, ptr0, len0);
+        var ptr1 = isLikeNone(name) ? 0 : passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmvm_sys_get_state(this.__wbg_ptr, ptr0, len0, ptr1, len1);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] >>> 0;
     }
     /**
+     * @param {string | null} [name]
      * @returns {number}
      */
-    sys_get_state_keys() {
-        const ret = wasm.wasmvm_sys_get_state_keys(this.__wbg_ptr);
+    sys_get_state_keys(name) {
+        var ptr0 = isLikeNone(name) ? 0 : passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmvm_sys_get_state_keys(this.__wbg_ptr, ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -850,13 +850,16 @@ export class WasmVM {
     /**
      * @param {string} key
      * @param {Uint8Array} buffer
+     * @param {string | null} [name]
      */
-    sys_set_state(key, buffer) {
+    sys_set_state(key, buffer, name) {
         const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvm_sys_set_state(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        var ptr2 = isLikeNone(name) ? 0 : passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len2 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmvm_sys_set_state(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }

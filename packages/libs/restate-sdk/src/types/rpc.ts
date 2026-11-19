@@ -16,6 +16,7 @@
 
 import type {
   Context,
+  EntryOptions,
   GenericCall,
   GenericSend,
   InvocationHandle,
@@ -48,7 +49,7 @@ import type { HooksProvider } from "../hooks.js";
 
 // ----------- rpc clients -------------------------------------------------------
 
-export type ClientCallOptions<I, O> = {
+export type ClientCallOptions<I, O> = EntryOptions & {
   /**
    * Override input serde.
    */
@@ -89,11 +90,6 @@ export type ClientCallOptions<I, O> = {
    * Add headers to the request, which the callee will be able to access using {@link Request.headers}.
    */
   headers?: Record<string, string>;
-
-  /**
-   * Observability name, recorded in the Restate journal.
-   */
-  name?: string;
 };
 
 export class Opts<I, O> {
@@ -113,7 +109,7 @@ export class Opts<I, O> {
   }
 }
 
-export type ClientSendOptions<I> = {
+export type ClientSendOptions<I> = EntryOptions & {
   /**
    * Makes a type-safe one-way RPC to the specified target service, after a delay specified by the
    * milliseconds' argument.
@@ -177,11 +173,6 @@ export type ClientSendOptions<I> = {
    * Add headers to the request, which the callee will be able to access using {@link Request.headers}.
    */
   headers?: Record<string, string>;
-
-  /**
-   * Observability name, recorded in the Restate journal.
-   */
-  name?: string;
 };
 
 export class SendOpts<I> {
@@ -638,22 +629,42 @@ export type ServiceHandlerOpts<I, O> = {
   onJournalMismatchErrors?: "retry" | "pause" | "fail";
 };
 
+/**
+ * Configures which virtual object / workflow state keys are *preloaded* (a.k.a.
+ * "eager state") at the start of each invocation.
+ *
+ * - `{ preload: true }`: preload **all** state  (this is the default behavior).
+ * - `{ preload: false }`: preload **nothing**.
+ * - `{ preload: ["key1", "key2"] }`: preload **only** the listed keys eagerly. This is supported only by Restate >= 1.8
+ */
+export type StatePreload = {
+  preload: boolean | string[];
+};
+
 export type ObjectHandlerOpts<I, O> = ServiceHandlerOpts<I, O> & {
   /**
-   * When set to `true`, lazy state will be enabled for all invocations to this handler.
-   *
-   * *NOTE:* You can set this field only if you register this endpoint against restate-server >= 1.4,
-   * otherwise the service discovery will fail.
+   * Configures which state keys are preloaded ("eager state") for invocations
+   * to this handler. See {@link StatePreload}.
+   */
+  state?: StatePreload;
+
+  /**
+   * @deprecated Use {@link StatePreload | `state`} instead: `enableLazyState: true`
+   * is equivalent to `state: { preload: false }`.
    */
   enableLazyState?: boolean;
 };
 
 export type WorkflowHandlerOpts<I, O> = ServiceHandlerOpts<I, O> & {
   /**
-   * When set to `true`, lazy state will be enabled for all invocations to this handler.
-   *
-   * *NOTE:* You can set this field only if you register this endpoint against restate-server >= 1.4,
-   * otherwise the service discovery will fail.
+   * Configures which state keys are preloaded ("eager state") for invocations
+   * to this handler. See {@link StatePreload}.
+   */
+  state?: StatePreload;
+
+  /**
+   * @deprecated Use {@link StatePreload | `state`} instead: `enableLazyState: true`
+   * is equivalent to `state: { preload: false }`.
    */
   enableLazyState?: boolean;
 };
@@ -1335,10 +1346,15 @@ export type ObjectOpts<U> = {
 
 export type ObjectOptions = ServiceOptions & {
   /**
-   * When set to `true`, lazy state will be enabled for all invocations to this service.
-   *
-   * *NOTE:* You can set this field only if you register this endpoint against restate-server >= 1.4,
-   * otherwise the service discovery will fail.
+   * Configures which state keys are preloaded ("eager state") for all
+   * invocations to this virtual object. Can be overridden per handler. See
+   * {@link StatePreload}.
+   */
+  state?: StatePreload;
+
+  /**
+   * @deprecated Use {@link StatePreload | `state`} instead: `enableLazyState: true`
+   * is equivalent to `state: { preload: false }`.
    */
   enableLazyState?: boolean;
 };
@@ -1473,10 +1489,15 @@ export type WorkflowOptions = ServiceOptions & {
    */
   workflowRetention?: Duration | number;
   /**
-   * When set to `true`, lazy state will be enabled for all invocations to this service.
-   *
-   * *NOTE:* You can set this field only if you register this endpoint against restate-server >= 1.4,
-   * otherwise the service discovery will fail.
+   * Configures which state keys are preloaded ("eager state") for all
+   * invocations to this workflow. Can be overridden per handler. See
+   * {@link StatePreload}.
+   */
+  state?: StatePreload;
+
+  /**
+   * @deprecated Use {@link StatePreload | `state`} instead: `enableLazyState: true`
+   * is equivalent to `state: { preload: false }`.
    */
   enableLazyState?: boolean;
 };
